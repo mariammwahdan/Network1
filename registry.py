@@ -10,11 +10,16 @@ from colorama import *
 colorama.init(autoreset=True)
 
 
+def get_peer_ip_port(name):
+    return (onlinePeers[name]["host"], onlinePeers[name]["port"])
+
+chatting={}
 class ClientThread(threading.Thread):
     # initializations for client thread
     def __init__(self, ip, port, tcpClientSocket):
         threading.Thread.__init__(self)
         # ip of the connected peer
+        self.chatroom = None
         self.ip = ip
         # port number of the connected peer
         self.port = port
@@ -25,6 +30,7 @@ class ClientThread(threading.Thread):
         self.isOnline = True
         self.udpServer = None
         print("New thread started for " + ip + ":" + str(port))
+
 
     # main of the thread
     def run(self):
@@ -90,6 +96,8 @@ class ClientThread(threading.Thread):
                             # timer thread of the udp server is started
                             response = "login-success"
                             logging.info("Send to " + self.ip + ":" + str(self.port) + " -> " + response)
+                            # host1,port1 =get_peer_ip_port(message[1])
+                            onlinePeers[message[1]] = {"host": self.ip, "port": message[3]}
                             self.tcpClientSocket.send(response.encode())
                             self.udpServer = UDPServer(self.username, self.tcpClientSocket)
                             self.udpServer.start()
@@ -141,6 +149,35 @@ class ClientThread(threading.Thread):
                         response = "search-user-not-found"
                         logging.info("Send to " + self.ip + ":" + str(self.port) + " -> " + response)
                         self.tcpClientSocket.send(response.encode())
+                elif message[0] == "chatroom-Create":
+                    if message[1] in chatting.keys():
+                        response = "chatroom-name-exists"
+                    else:
+                        chatting[message[1]] = []
+                        response = "chatroom-creation-success"
+                    self.tcpClientSocket.send(response.encode())
+                elif message[0] == "chatroom-join-request":
+                    if message[1] not in chatting.keys():
+                        response = "chatroom-not-found"
+                    else:
+                        response = "chatroom-join-success"
+                        for user in chatting[message[1]]:
+                            response = "{}\n{},{}".format(response, onlinePeers[user]["host"],
+                                                          onlinePeers[user]["port"])
+                        chatting[message[1]].append(self.username)
+                        self.chatroom = message[1]
+                    self.tcpClientSocket.send(response.encode())
+                elif message[0]=="chatroom-list-request":
+                    response = "chatroom-list"
+                    for key in chatting.keys():
+                        response = "{}\n{} : {}".format(response, key, len(chatting[key]))
+                    self.tcpClientSocket.send(response.encode())
+                elif message[0]=="online-users":
+                    users = "\n".join(onlinePeers.keys())
+                    response = "online-users\n" + users
+                    self.tcpClientSocket.send(response.encode())
+
+
             except OSError as oErr:
                 logging.error("OSError: {0}".format(oErr))
 
@@ -148,6 +185,8 @@ class ClientThread(threading.Thread):
 
     def resetTimeout(self):
         self.udpServer.resetTimer()
+
+
 
 
 # implementation of the udp server thread for clients
